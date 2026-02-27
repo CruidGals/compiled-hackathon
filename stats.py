@@ -1,13 +1,43 @@
-"""Statistical analysis helpers for Research Integrity Auditor.
+"""Statistical analysis helpers for Research Integrity Auditor (Developer 2).
 
-Implements `analyze_p_values()` which follows Developer 2's spec:
-- Filter p-values to [0.00, 0.05].
-- Compute counts for Risky (0.04-0.05) and Highly Significant (<=0.01).
-- Compute a risk ratio and derive an Integrity Score (0-100) and status string.
+MATHEMATICAL FOUNDATION (P-Curve Detection):
+============================================
 
-The score mapping uses: score = int(100 * (1 / (1 + risk_ratio))).
-This yields 100 when there are no Risky values, ~50 when risky==high_sig,
-and approaches 0 for very large ratios.
+The p-curve is a forensic statistical tool for detecting p-hacking—the practice
+of manipulating data analysis (HARKing, p-hacking, publication bias) to make
+results appear statistically significant.
+
+KEY PRINCIPLE:
+In legitimate research with a true effect, p-values follow a right-skewed
+distribution. Most discoveries are highly significant (p ≤ 0.01), fewer are
+marginally significant (0.04-0.05), and this frequency naturally decreases
+toward the 0.05 threshold.
+
+In p-hacked data, researchers iteratively analyze, delete failures, or adjust
+hypotheses until results barely cross p < 0.05. This creates an UNNATURAL "bump"
+clustering at 0.044-0.049, inverting the natural ratio.
+
+DETECTION LOGIC:
+- Calculate: risky_count = p-values in [0.04, 0.05]
+- Calculate: high_sig_count = p-values in (0.00, 0.01]
+- Risk Ratio = risky_count / max(high_sig_count, 1)
+  * Legitimate (right-skew): ratio << 1
+  * P-hacked (inverted bump): ratio >> 1
+- Map ratio → Integrity Score (0-100):
+  score = 100 / (1 + risk_ratio)
+  * score = 100 when ratio = 0 (no risky values, clean data)
+  * score ≈ 50 when ratio ≈ 1 (borderline suspicious)
+  * score → 0 when ratio >> 1 (highly suspicious)
+
+MATHEMATICAL PROPERTIES VALIDATED IN TESTS:
+- Bounded output: score ∈ [0, 100]
+- Monotonic: higher risky/high_sig ratio → lower score
+- Edge cases: empty data, no values in window, outliers
+- Distribution validation: Beta(0.5, 5) models genuine right-skew
+
+REFERENCES:
+- Simonsohn, U., Nelson, L. D., & Simmons, J. P. (2014).
+  "P-curve: A key to the file-drawer." Journal of Experimental Psychology.
 """
 from typing import Iterable, Tuple, Dict
 
