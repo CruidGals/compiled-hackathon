@@ -22,18 +22,20 @@ def run_pipeline(pdf_path: Path) -> int:
         print("Error: expected a .pdf file")
         return 1
 
-    # 1. Miner: text extraction -> p-values
-    pdf_bytes = pdf_path.read_bytes()
-    p_values = get_p_values(pdf_bytes)
+    # 1. Miner: text extraction -> p-values (PDF opened inside miner)
+    p_values = get_p_values(pdf_path)
 
     if not p_values:
         print(f"No p-values extracted from {pdf_path.name}")
         score, status = 100, "No p-values in 0-0.05"
     else:
-        # 2. Stats (same as test_stats.py): analyze_p_values + summarize_p_values
+        # 2. Stats: uses every detected p-value; score is based on [0, 0.05] (p-curve standard).
         score, status = analyze_p_values(p_values)
         summary = summarize_p_values(p_values)
-        print(f"Extracted {len(p_values)} p-value(s); in [0, 0.05] window: {summary['filtered_count']}")
+        total = summary["total_count"]
+        in_window = summary["filtered_count"]
+        above = summary["count_above_005"]
+        print(f"Using all {total} detected p-value(s): {in_window} in [0, 0.05] (for score), {above} above 0.05")
         print(f"  Risky (0.04-0.05): {summary['risky_count']}, Highly sig (<=0.01): {summary['high_sig_count']}")
         print(f"  Risk ratio: {summary['risk_ratio']:.3f}")
 
