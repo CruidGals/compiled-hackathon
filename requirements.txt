@@ -2,3 +2,5 @@ streamlit
 pymupdf
 matplotlib
 pandas
+google-cloud-bigquery
+google-cloud-storage
