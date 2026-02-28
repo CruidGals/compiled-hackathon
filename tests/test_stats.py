@@ -10,18 +10,22 @@ Tests cover:
   - P-hacking scenario (clustering at 0.04-0.05, suspicious bump)
   - Edge cases and robustness
   - Mathematical validation of the risk ratio
+  - Miner integration: PDF bytes -> get_p_values -> analyze_p_values/summarize_p_values
 """
 import sys
 import os
 from pathlib import Path
+import tempfile
 import pytest
 import matplotlib.pyplot as plt
 import numpy as np
+import fitz  # PyMuPDF - used for miner integration tests
 
 # Fix import: add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from stats import analyze_p_values, summarize_p_values
+from miner import get_p_values
 
 
 # ============================================================================
@@ -212,6 +216,96 @@ def test_status_strings_valid():
         assert status in valid_statuses, (
             f"Unexpected status '{status}' for data {data}"
         )
+
+
+# ============================================================================
+# MINER INTEGRATION (PDF -> get_p_values -> stats)
+# All tests here use p-values extracted by miner.get_p_values() and run them
+# through the stats module (analyze_p_values, summarize_p_values).
+# ============================================================================
+
+def _pdf_bytes_with_text(text):
+    """Build a minimal PDF containing the given text; return its bytes."""
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), text)
+    pdf_bytes = doc.write()
+    doc.close()
+    return pdf_bytes
+
+
+def _pdf_path_with_text(text):
+    """Write a minimal PDF with the given text to a temp file; return path. Caller may unlink."""
+    pdf_bytes = _pdf_bytes_with_text(text)
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        f.write(pdf_bytes)
+        return f.name
+
+
+def test_miner_extract_then_analyze_legitimate():
+    """miner.get_p_values(PDF path) -> stats.analyze_p_values: legitimate pattern."""
+    text = "Results: p=0.001, p=0.005, p<0.01, p=0.008."
+    pdf_path = _pdf_path_with_text(text)
+    try:
+        p_values = get_p_values(pdf_path)
+        assert len(p_values) >= 3, f"Expected at least 3 p-values from miner, got {p_values}"
+        score, status = analyze_p_values(p_values)
+        assert score >= 70, f"Legitimate p-values should score >= 70, got {score}"
+        assert status == "Likely Reliable"
+    finally:
+        os.unlink(pdf_path)
+
+
+def test_miner_extract_then_analyze_phacked():
+    """miner.get_p_values(PDF path) -> stats.analyze_p_values: p-hacked pattern."""
+    text = "p=0.045, p=0.046, p=0.047, p=0.048, p=0.049, p=0.044."
+    pdf_path = _pdf_path_with_text(text)
+    try:
+        p_values = get_p_values(pdf_path)
+        assert len(p_values) >= 3, f"Expected at least 3 p-values from miner, got {p_values}"
+        score, status = analyze_p_values(p_values)
+        assert score < 70, f"P-hacked pattern should score < 70, got {score}"
+        assert status in ("High Risk", "Moderate Risk")
+    finally:
+        os.unlink(pdf_path)
+
+
+def test_miner_extract_then_summarize():
+    """miner.get_p_values(path) -> stats.summarize_p_values returns expected keys."""
+    text = "p=0.02, p=0.04, p<0.01."
+    pdf_path = _pdf_path_with_text(text)
+    try:
+        p_values = get_p_values(pdf_path)
+        summary = summarize_p_values(p_values)
+        assert "filtered_count" in summary
+        assert "risky_count" in summary
+        assert "high_sig_count" in summary
+        assert "risk_ratio" in summary
+    finally:
+        os.unlink(pdf_path)
+
+
+def test_miner_extracted_p_values_through_stats_sample_pdf():
+    """Use miner-extracted p-values from repo sample PDF inside stats (score + summary)."""
+    root = Path(__file__).resolve().parent.parent
+    for name in ("sample_paper.pdf", "sample_paper_2.pdf"):
+        sample_path = root / name
+        if not sample_path.exists():
+            continue
+        p_values = get_p_values(sample_path)
+        assert isinstance(p_values, list), "miner.get_p_values must return a list"
+        score, status = analyze_p_values(p_values)
+        assert 0 <= score <= 100, f"Score must be 0-100, got {score}"
+        assert status in (
+            "No p-values in 0-0.05",
+            "High Risk",
+            "Moderate Risk",
+            "Likely Reliable",
+        ), f"Invalid status: {status}"
+        summary = summarize_p_values(p_values)
+        assert "filtered_count" in summary and "risk_ratio" in summary
+        return  # one sample is enough
+    pytest.skip("No sample_paper.pdf or sample_paper_2.pdf found in project root")
 
 
 # ============================================================================
