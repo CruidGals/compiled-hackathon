@@ -1,47 +1,39 @@
 """
 Research Integrity Auditor — UI & Visualization (Module 3).
-Placeholder implementations for get_p_values and analyze_integrity until other modules are ready.
+Uses miner.get_p_values and stats.analyze_p_values for extraction and integrity scoring.
 """
 
-import hashlib
-import random
+import sys
+import tempfile
+from pathlib import Path
+
+# Add project root for imports (miner, stats)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import streamlit as st
 import matplotlib.pyplot as plt
 
+from miner import get_p_values as get_p_values_from_pdf
+from stats import analyze_p_values, summarize_p_values
 
-# ----- Placeholders (replace with miner.get_p_values and stats.analyze_integrity) -----
+
+# ----- Use real miner + stats (PDF bytes -> temp file -> miner; p-values -> stats) -----
 
 def get_p_values(file_bytes: bytes) -> list[float]:
-    """Placeholder: returns deterministic fake p-values based on file content."""
-    seed = int(hashlib.sha256(file_bytes).hexdigest()[:8], 16)
-    rng = random.Random(seed)
-    n = rng.randint(15, 45)
-    # Mix of values in [0, 0.05] with a slight bump near 0.05 (p-hacking look) or more uniform
-    values = []
-    for _ in range(n):
-        if rng.random() < 0.6:
-            values.append(round(rng.uniform(0.001, 0.05), 4))
-        else:
-            values.append(round(rng.uniform(0.01, 0.049), 4))
-    return sorted(values)
+    """Extract p-values from PDF bytes using miner (writes to temp file, then calls miner.get_p_values)."""
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+    try:
+        return get_p_values_from_pdf(Path(tmp_path))
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
 
 
 def analyze_integrity(p_values: list[float]) -> tuple[float, str]:
-    """Placeholder: returns deterministic fake score and status from p-value list."""
-    sig = [p for p in p_values if 0 <= p <= 0.05]
-    if not sig:
-        return 0.0, "No significant p-values"
-    risky = sum(1 for p in sig if 0.04 <= p <= 0.05)
-    highly_sig = sum(1 for p in sig if p <= 0.01)
-    ratio = (risky / highly_sig) if highly_sig else 5.0
-    score = max(0, min(100, round(100 - ratio * 18, 1)))
-    if score >= 70:
-        status = "Reliable"
-    elif score >= 40:
-        status = "Moderate Risk"
-    else:
-        status = "High Risk"
-    return score, status
+    """Return integrity score and status using stats.analyze_p_values (score 0–100, status string)."""
+    score, status = analyze_p_values(p_values)
+    return float(score), status
 
 
 @st.dialog("About this p-value")
@@ -106,8 +98,6 @@ if "audit_result" not in st.session_state:
 
         p_values = get_p_values(file_bytes)
         sig_only = [p for p in p_values if 0 <= p <= 0.05]
-        if not sig_only:
-            sig_only = [round(random.Random(42).uniform(0.01, 0.05), 4) for _ in range(20)]
         score, status = analyze_integrity(p_values)
 
         st.session_state["audit_result"] = {
