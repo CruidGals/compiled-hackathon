@@ -1,11 +1,18 @@
 import fitz  # PyMuPDF
 import re
+from pathlib import Path
 
-def get_p_values(file_bytes):
+
+def get_p_values(pdf_path):
     """
-    Extracts numerical p-values from a PDF byte stream using regex.
+    Extracts numerical p-values from a PDF file using regex.
+    pdf_path: path to the PDF file (str or pathlib.Path).
     """
-    # Step 2: Extract raw text from PDF
+    path = Path(pdf_path)
+    if not path.exists():
+        raise FileNotFoundError(f"PDF not found: {path}")
+    file_bytes = path.read_bytes()
+    # Extract raw text from PDF
     doc = fitz.open(stream=file_bytes, filetype="pdf")
     full_text = ""
     for page in doc:
@@ -35,22 +42,12 @@ def get_p_values(file_bytes):
 # --- LOCAL TESTING BLOCK ---
 # --- TEST BLOCK ---
 if __name__ == "__main__":
-    # 1. Create a "fake" paper string with various p-value formats
-    fake_paper_text = """
-    We found a significant effect (p=0.04). 
-    The secondary analysis showed p < .001 and P = 0.05.
-    However, the control group was not significant (p > 0.1).
-    Some random text with a number like 123.45 should be ignored.
-    """
-    
-    # 2. Manually run your regex (Step 3)
-    import re
-    pattern = r'[pP]\s*[=<>]\s*(\d*\.?\d+)'
-    matches = re.findall(pattern, fake_paper_text)
-    print(f"Regex Matches found: {matches}") 
-    # EXPECTED: ['.04', '.001', '0.05', '0.1']
+    pdf_path = "sample_paper.pdf"  # Make sure the file name matches exactly!
 
-    # 3. Manually run your normalization (Step 4)
-    normalized = [float(v) for v in matches if 0 <= float(v) <= 1]
-    print(f"Normalized Floats: {normalized}")
-    # EXPECTED: [0.04, 0.001, 0.05, 0.1]
+    try:
+        results = get_p_values(pdf_path)
+        print(f"--- Audit Results for {pdf_path} ---")
+        print(f"Found {len(results)} total p-values.")
+        print(f"Values: {results}")
+    except FileNotFoundError as e:
+        print(f"Error: {e}")

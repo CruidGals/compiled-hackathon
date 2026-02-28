@@ -38,6 +38,9 @@ MATHEMATICAL PROPERTIES VALIDATED IN TESTS:
 REFERENCES:
 - Simonsohn, U., Nelson, L. D., & Simmons, J. P. (2014).
   "P-curve: A key to the file-drawer." Journal of Experimental Psychology.
+
+MVP NOTE: Analysis uses raw p-values only. Context (e.g. which hypothesis, test type,
+or outcome) could be added later for finer-grained credibility assessment.
 """
 from typing import Iterable, Tuple, Dict
 
@@ -84,16 +87,20 @@ def analyze_p_values(p_values: Iterable[float]) -> Tuple[int, str]:
 def summarize_p_values(p_values: Iterable[float]) -> Dict[str, float]:
     """Return detailed counts and the computed risk ratio for debugging.
 
-    This helper is useful for UI or logging.
+    Uses every detected p-value: total_count and count_above_005 include values > 0.05.
+    The integrity score (risk_ratio, etc.) is based only on [0, 0.05] per p-curve methodology.
     """
     filtered = [float(p) for p in p_values if p is not None]
     window = [p for p in filtered if 0.0 <= p <= 0.05]
+    above_005 = [p for p in filtered if p > 0.05]
     risky_count = sum(1 for p in window if 0.04 <= p <= 0.05)
     high_sig_count = sum(1 for p in window if p <= 0.01)
     denom = high_sig_count if high_sig_count > 0 else 1
     risk_ratio = risky_count / denom
     return {
+        "total_count": len(filtered),
         "filtered_count": len(window),
+        "count_above_005": len(above_005),
         "risky_count": risky_count,
         "high_sig_count": high_sig_count,
         "risk_ratio": risk_ratio,
