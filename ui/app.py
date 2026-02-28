@@ -7,7 +7,6 @@ import hashlib
 import random
 import streamlit as st
 import matplotlib.pyplot as plt
-import pandas as pd
 
 
 # ----- Placeholders (replace with miner.get_p_values and stats.analyze_integrity) -----
@@ -45,6 +44,40 @@ def analyze_integrity(p_values: list[float]) -> tuple[float, str]:
     return score, status
 
 
+@st.dialog("About this p-value")
+def show_pvalue_context():
+    p = st.session_state.get("explain_pvalue")
+    if p is None:
+        st.write("No p-value selected.")
+        if st.button("Close"):
+            st.rerun()
+        return
+    st.markdown(f"**p = {p}**")
+    st.write(
+        "This is one of the reported p-values from the paper that falls below the conventional 0.05 significance threshold. "
+        "It was extracted from the PDF (e.g. from a results section or table)."
+    )
+    st.markdown("**What does this value mean?**")
+    if p <= 0.01:
+        st.write(
+            "This is a **highly significant** result (p ≤ 0.01). Strong evidence like this is what we expect in solid, "
+            "replicable research. On its own, this value is not concerning."
+        )
+    elif p <= 0.04:
+        st.write(
+            "This is in the **moderate** range (0.01 < p ≤ 0.04). It is still conventionally significant and not suspicious "
+            "by itself. Context matters: many values in this band can be normal."
+        )
+    else:
+        st.write(
+            "This value sits in the **risky band** (0.04 ≤ p ≤ 0.05)—right at the edge of significance. A lot of values "
+            "clustered here can suggest p-hacking (e.g. analysts trying until they just cross 0.05). One such value is "
+            "not proof, but it contributes to a suspicious pattern when the overall P-curve shows a bump near 0.05."
+        )
+    if st.button("Close", type="primary"):
+        st.rerun()
+
+
 # ----- UI -----
 
 st.set_page_config(page_title="Research Integrity Auditor", layout="wide")
@@ -54,8 +87,8 @@ if "audit_result" not in st.session_state:
     # Wider margins: constrain content to a centered column with gutters
     _margin_l, _center, _margin_r = st.columns([2, 8, 2])
     with _center:
-        st.title("Research Integrity Auditor")
-        st.caption("P-Curve analysis for detecting p-hacking in academic PDFs")
+        st.title("Research Integrity Auditor", text_alignment="center")
+        st.caption("P-Curve analysis for detecting p-hacking in academic PDFs", text_alignment="center")
         st.markdown("---")
 
         uploaded = st.file_uploader(
@@ -108,6 +141,7 @@ with _center:
             st.rerun()
 
     st.markdown("---")
+    st.markdown("#### Primary Metrics")
 
     # Primary metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -141,6 +175,35 @@ with _center:
     plt.close()
 
     with st.expander("View extracted p-values"):
-        st.write(f"Total extracted: {len(p_values)} · In significant range (0–0.05): {len(sig_only)}")
-        df = pd.DataFrame({"p-value": sig_only})
-        st.dataframe(df, width='stretch')
+        st.write(f"Total extracted: {len(p_values)} · In significant range (0–0.05): {len(sig_only)}. Click any value to explain it.")
+        st.markdown(
+            """
+            <style>
+            /* Same-size buttons, tighter grid */
+            [data-testid="stExpander"] [data-testid="stVerticalBlock"] > div button {
+                width: 5.5em !important; min-width: 5.5em !important; max-width: 5.5em !important;
+                height: 2.25em !important; min-height: 2.25em !important;
+                padding: 4px 8px !important; border-radius: 10px; font-family: monospace; font-size: 13px;
+            }
+            [data-testid="stExpander"] [data-testid="stVerticalBlock"] > div button:hover { border-color: #888 !important; }
+            /* Tighter spacing between grid columns and rows */
+            [data-testid="stExpander"] [data-testid="stHorizontalBlock"] { gap: 6px !important; }
+            [data-testid="stExpander"] [data-testid="stVerticalBlock"] > div { padding-top: 2px !important; padding-bottom: 2px !important; }
+            @media (prefers-color-scheme: dark) {
+                [data-testid="stExpander"] [data-testid="stVerticalBlock"] > div button { background-color: #262730 !important; color: #fafafa !important; border-color: #4b5563 !important; }
+                [data-testid="stExpander"] [data-testid="stVerticalBlock"] > div button:hover { background-color: #374151 !important; }
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        n_cols = 10
+        for start in range(0, len(sig_only), n_cols):
+            row_vals = sig_only[start : start + n_cols]
+            cols = st.columns(n_cols)
+            for c, (col, p) in enumerate(zip(cols, row_vals)):
+                i = start + c
+                with col:
+                    if st.button(f"{p}", key=f"pval_{i}", help="Click to explain this p-value"):
+                        st.session_state["explain_pvalue"] = p
+                        show_pvalue_context()
