@@ -1,52 +1,41 @@
+"""
+Download PDFs of an author's papers from arXiv (no Google Cloud required).
+Uses the public arXiv API; install with: pip install arxiv
+"""
 import os
-from google.cloud import bigquery
-from google.cloud import storage
+import arxiv
 
-def audit_author_papers(author_name, output_dir="./author_papers"):
-    # 1. Initialize Clients
-    bq_client = bigquery.Client()
-    storage_client = storage.Client()
-    bucket = storage_client.bucket("arxiv-dataset")
-    
+def audit_author_papers(author_name, output_dir="./author_papers", max_results=5):
+    """
+    Search arXiv for papers by author_name and download their PDFs.
+    """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    # 2. Search BigQuery for IDs
-    # We use a wildcard search for the name format 'Surname, First'
-    query = """
-        SELECT id, title 
-        FROM `kaggle-public-data.arxiv.metadata` 
-        WHERE authors LIKE @author
-    """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("author", "STRING", f"%{author_name}%")
-        ]
-    )
-    
-    print(f"🔎 Searching for papers by: {author_name}...")
-    query_job = bq_client.query(query, job_config=job_config)
-    results = list(query_job.result())
-    
-    print(f"✅ Found {len(results)} papers. Starting downloads...\n")
+    # arXiv API uses "au:Name" for author search
+    query_author = author_name.replace(",", " ").strip()
+    search_query = f"au:{query_author}"
 
-    # 3. Download the PDFs
-    for row in results:
-        paper_id = row.id
-        # ArXiv bucket structure: arxiv/arxiv/pdf/YYMM/ID.pdf
-        yymm = paper_id.split('.')[0]
-        blob_path = f"arxiv/arxiv/pdf/{yymm}/{paper_id}.pdf"
-        local_path = os.path.join(output_dir, f"{paper_id}.pdf")
+    print(f"Searching arXiv for papers by: {author_name}...")
+    search = arxiv.Search(query=search_query, max_results=max_results)
+    client = arxiv.Client()
 
-        blob = bucket.blob(blob_path)
-        
+    count = 0
+    for result in client.results(search):
         try:
-            blob.download_to_filename(local_path)
-            print(f"📥 Downloaded: {paper_id} | {row.title[:50]}...")
+            short_id = result.get_short_id().replace("/", "_")
+            filename = f"{short_id}.pdf"
+            result.download_pdf(dirpath=output_dir, filename=filename)
+            count += 1
+            title_short = (result.title[:50] + "...") if len(result.title) > 50 else result.title
+            print(f"Downloaded: {short_id} | {title_short}")
         except Exception as e:
-            # Some very old papers or newly updated ones might have different paths
-            print(f"⚠️ Could not find PDF for {paper_id}: {e}")
+            print(f"Could not download {result.get_short_id()}: {e}")
 
-# --- EXECUTION ---
-# For ArXiv, use "Surname, First Name" or just "Surname"
-audit_author_papers("Hinton, Geoffrey")
+    print(f"\nDone. Downloaded {count} PDF(s) to {output_dir}/")
+
+# --- THIS WAS THE MISSING PART ---
+if __name__ == "__main__":
+    # Call the function here to make the script actually DO something
+    # Example: "Geoffrey Hinton"
+    audit_author_papers("Geoffrey Hinton", max_results=5)

@@ -88,7 +88,7 @@ if "audit_result" not in st.session_state:
     _margin_l, _center, _margin_r = st.columns([2, 8, 2])
     with _center:
         st.title("Research Integrity Auditor", text_alignment="center")
-        st.caption("P-Curve analysis for detecting p-hacking in academic PDFs", text_alignment="center")
+        st.caption("P-Curve analysis for detecting p-hacking in academic PDFs")
         st.markdown("---")
 
         uploaded = st.file_uploader(
